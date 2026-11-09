@@ -257,6 +257,12 @@ describe('toJsonSchema() zod v3 output compat', () => {
     for (const schema of [z.cuid(), z.ulid(), z.base64(), z.nanoid()]) {
       const json = toJsonSchema({ schema });
       assert.strictEqual(typeof json.pattern, 'string', json.format);
+      // The validator ignores unknown formats; the pattern still rejects.
+      assert.strictEqual(
+        validateSchema('!!not valid!!', { jsonSchema: json }).valid,
+        false,
+        json.format
+      );
     }
   });
 
@@ -858,6 +864,47 @@ describe('validation errors with Standard Schemas', () => {
       () => parseSchema({}, { schema }),
       (e: unknown) =>
         e instanceof ValidationError && /k must be a number/.test(e.message)
+    );
+  });
+});
+
+describe('validation error details', () => {
+  it('decodes property names in error paths', () => {
+    const { errors } = validateSchema(
+      { 'my key': { ä: 1 } },
+      {
+        jsonSchema: {
+          type: 'object',
+          properties: {
+            'my key': {
+              type: 'object',
+              properties: { ä: { type: 'string' } },
+            },
+          },
+        },
+      }
+    );
+    assert.deepStrictEqual(
+      errors?.map((e) => e.path),
+      ['my key.ä']
+    );
+  });
+
+  it('reports only the specific error for if/then/else', () => {
+    const { errors } = validateSchema(
+      { kind: 'a', n: 'x' },
+      {
+        jsonSchema: {
+          type: 'object',
+          if: { properties: { kind: { const: 'a' } } },
+          then: { properties: { n: { type: 'number' } } },
+          else: { properties: { n: { type: 'string' } } },
+        },
+      }
+    );
+    assert.deepStrictEqual(
+      errors?.map((e) => e.path),
+      ['n']
     );
   });
 });
